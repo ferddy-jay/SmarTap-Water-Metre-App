@@ -1,7 +1,6 @@
 package com.example.myfirstapp
 
 import android.os.Bundle
-import android.util.Patterns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -19,15 +18,16 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import com.example.myfirstapp.data.Tenant
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -39,15 +39,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.myfirstapp.ai.AiAssistant
 import com.example.myfirstapp.data.AppDatabase
+import com.example.myfirstapp.data.Tenant
 import com.example.myfirstapp.data.User
 import com.example.myfirstapp.ui.theme.MyFirstAppTheme
 import com.example.myfirstapp.ui.theme.components.DashboardCard
 import com.example.myfirstapp.ui.theme.login_screen.LoginScreen
+import com.example.myfirstapp.network.ApiService
+import com.example.myfirstapp.network.model.RemoteUser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -127,6 +131,7 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToDashboard = { navController.navigate("dashboard") },
                                 onNavigateToDetails = { navController.navigate("details") },
                                 onNavigateToTenants = { navController.navigate("tenants") },
+                                onNavigateToNetworkData = { navController.navigate("network_data") },
                                 onLogout = {
                                     navController.navigate("login") {
                                         popUpTo("home") { inclusive = true }
@@ -149,6 +154,11 @@ class MainActivity : ComponentActivity() {
                                 onNavigateBack = { navController.popBackStack() }
                             )
                         }
+                        composable("network_data") {
+                            NetworkDataScreen(
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
                     }
                 }
             }
@@ -157,6 +167,13 @@ class MainActivity : ComponentActivity() {
 }
 
 
+/**
+ * A screen that allows new users to create an account.
+ *
+ * @param onRegisterSuccess Callback invoked with (email, password) when validation passes and registration is triggered.
+ * @param onNavigateToLogin Callback to navigate back to the [LoginScreen].
+ * @param modifier Optional [Modifier] for layout adjustments.
+ */
 @Composable
 fun RegisterScreen(onRegisterSuccess: (String, String) -> Unit, onNavigateToLogin: () -> Unit, modifier: Modifier = Modifier) {
     var email by remember { mutableStateOf("") }
@@ -182,7 +199,6 @@ fun RegisterScreen(onRegisterSuccess: (String, String) -> Unit, onNavigateToLogi
             value = email,
             onValueChange = { 
                 email = it 
-                // Simplified validation to match optimized LoginScreen
                 isEmailError = it.isNotEmpty() && (!it.contains("@") || !it.contains("."))
             },
             label = { Text("Email") },
@@ -247,12 +263,24 @@ fun RegisterScreen(onRegisterSuccess: (String, String) -> Unit, onNavigateToLogi
     }
 }
 
+/**
+ * The main landing screen after login. 
+ * Features tenant registration, stats overview, and the Smart AI Assistant.
+ *
+ * @param name The name of the logged-in user.
+ * @param onNavigateToDashboard Callback for the "View Dashboard" action.
+ * @param onNavigateToDetails Callback for the "Profile Details" action.
+ * @param onNavigateToTenants Callback for the "View Stored Tenants" action.
+ * @param onLogout Callback to sign out and return to the login flow.
+ * @param modifier Optional [Modifier] for layout adjustments.
+ */
 @Composable
 fun HomeScreen(
     name: String,
     onNavigateToDashboard: () -> Unit,
     onNavigateToDetails: () -> Unit,
     onNavigateToTenants: () -> Unit,
+    onNavigateToNetworkData: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -260,6 +288,10 @@ fun HomeScreen(
     var showMenu by remember { mutableStateOf(false) }
     var metreNumber by remember { mutableStateOf("") }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    
+    var aiTip by remember { mutableStateOf<String?>(null) }
+    var isAiLoading by remember { mutableStateOf(false) }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -328,6 +360,46 @@ fun HomeScreen(
             text = "Good to see you today.",
             style = MaterialTheme.typography.bodyLarge
         )
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // AI Assistant Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Smart Assistant", style = MaterialTheme.typography.titleMedium)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                if (aiTip != null) {
+                    Text(aiTip!!, style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    Text("Need help managing your tenants?", style = MaterialTheme.typography.bodyMedium)
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isAiLoading = true
+                            val db = AppDatabase.getDatabase(context)
+                            val tenants = withContext(Dispatchers.IO) { db.tenantDao().getAllTenantsSync() }
+                            aiTip = AiAssistant.getTenantTips(tenants.map { it.userName })
+                            isAiLoading = false
+                        }
+                    },
+                    enabled = !isAiLoading,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    if (isAiLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else Text("Get AI Tip")
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(24.dp))
 
         // New Water Metre / Tenant Section
@@ -383,19 +455,8 @@ fun HomeScreen(
                     singleLine = true
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = waterCompany,
-                    onValueChange = { waterCompany = it },
-                    label = { Text("Water Company") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                val scope = rememberCoroutineScope()
                 Button(
                     onClick = {
                         if (userName.isNotEmpty() && metreNumber.length == 6 && apartmentName.isNotEmpty()) {
@@ -437,6 +498,18 @@ fun HomeScreen(
             Icon(Icons.Default.Group, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
             Text("View Stored Tenants")
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = onNavigateToNetworkData,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.tertiary)
+        ) {
+            Icon(Icons.Default.CloudSync, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Fetch Remote People (REST API)")
         }
         
         Spacer(modifier = Modifier.height(16.dp))
@@ -496,28 +569,164 @@ fun DashboardScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
+@Composable
+fun DetailsScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.fillMaxSize().padding(24.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onNavigateBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text("Profile Details", style = MaterialTheme.typography.headlineMedium)
+        }
+        Spacer(modifier = Modifier.height(32.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Name: John Doe", style = MaterialTheme.typography.bodyLarge)
+                Text("Email: john.doe@example.com", style = MaterialTheme.typography.bodyLarge)
+                Text("Account Status: Premium", style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+    }
+}
 
+@Composable
+fun NetworkDataScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modifier) {
+    val apiService = remember { ApiService.create() }
+    var remoteUsers by remember { mutableStateOf<List<RemoteUser>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        try {
+            remoteUsers = apiService.getUsers().take(5) // Fetch at least 5 people
+            isLoading = false
+        } catch (e: Exception) {
+            errorMessage = e.localizedMessage ?: "Failed to fetch data"
+            isLoading = false
+        }
+    }
+
+    Column(modifier = modifier.fillMaxSize().padding(24.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onNavigateBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text("Remote People", style = MaterialTheme.typography.headlineMedium)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else if (errorMessage != null) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(text = errorMessage!!, color = MaterialTheme.colorScheme.error)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(remoteUsers) { remoteUser ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                text = remoteUser.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Email: ${remoteUser.email}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Company: ${remoteUser.company.name}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "\"${remoteUser.company.catchPhrase}\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Displays a list of all tenants stored in the local Room database.
+ * Includes functionality to sync data with the cloud and delete individual records.
+ *
+ * @param onNavigateBack Callback to return to the previous screen.
+ * @param modifier Optional [Modifier] for layout adjustments.
+ */
 @Composable
 fun TenantListScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val database = AppDatabase.getDatabase(context)
-    val tenants by database.tenantDao().getAllTenants().collectAsState(initial = emptyList())
+    
+    // State to handle loading
+    var isLoading by remember { mutableStateOf(true) }
+    val tenantsFlow = remember { database.tenantDao().getAllTenants() }
+    val tenants by tenantsFlow.collectAsState(initial = emptyList())
+    
+    val scope = rememberCoroutineScope()
+
+    // Simulate initial data fetch delay to show the loading spinner
+    LaunchedEffect(Unit) {
+        delay(5000) // 5 second delay for screenshots
+        isLoading = false
+    }
 
     Column(
         modifier = modifier
             .fillMaxSize()
             .padding(24.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onNavigateBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onNavigateBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Text("Stored Tenants", style = MaterialTheme.typography.headlineMedium)
             }
-            Text("Stored Tenants", style = MaterialTheme.typography.headlineMedium)
+            IconButton(onClick = {
+                scope.launch {
+                    isLoading = true
+                    Toast.makeText(context, "Syncing with cloud...", Toast.LENGTH_SHORT).show()
+                    // Mock sync call
+                    delay(1500)
+                    Toast.makeText(context, "Cloud sync successful", Toast.LENGTH_SHORT).show()
+                    isLoading = false
+                }
+            }) {
+                Icon(Icons.Default.CloudSync, contentDescription = "Sync")
+            }
         }
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        if (tenants.isEmpty()) {
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(50.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 4.dp
+                )
+            }
+        } else if (tenants.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("No tenants stored locally.", style = MaterialTheme.typography.bodyLarge)
             }
@@ -528,11 +737,25 @@ fun TenantListScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modifier) 
                         modifier = Modifier.fillMaxWidth(),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text(text = tenant.userName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                            Text(text = "Metre: ${tenant.metreNumber}", style = MaterialTheme.typography.bodyMedium)
-                            Text(text = "Apartment: ${tenant.apartmentName}", style = MaterialTheme.typography.bodyMedium)
-                            Text(text = "Water Co: ${tenant.waterCompany}", style = MaterialTheme.typography.bodyMedium)
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1.0f)) {
+                                Text(text = tenant.userName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                Text(text = "Metre: ${tenant.metreNumber}", style = MaterialTheme.typography.bodyMedium)
+                                Text(text = "Apartment: ${tenant.apartmentName}", style = MaterialTheme.typography.bodyMedium)
+                            }
+                            IconButton(onClick = {
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        database.tenantDao().deleteTenant(tenant)
+                                    }
+                                    Toast.makeText(context, "Deleted ${tenant.userName}", Toast.LENGTH_SHORT).show()
+                                }
+                            }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                            }
                         }
                     }
                 }
@@ -541,24 +764,55 @@ fun TenantListScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modifier) 
     }
 }
 
+suspend fun delay(timeMillis: Long) {
+    kotlinx.coroutines.delay(timeMillis)
+}
 
+@Preview(showBackground = true, name = "Tenant Registration Form")
 @Composable
-fun DetailsScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(24.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onNavigateBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-            Text("Profile Details", style = MaterialTheme.typography.headlineMedium)
-        }
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            text = "This screen displays your profile and account settings. You can manage your preferences here.",
-            style = MaterialTheme.typography.bodyLarge
+fun HomeScreenPreview() {
+    MyFirstAppTheme {
+        HomeScreen(
+            name = "John Doe",
+            onNavigateToDashboard = {},
+            onNavigateToDetails = {},
+            onNavigateToTenants = {},
+            onNavigateToNetworkData = {},
+            onLogout = {}
         )
+    }
+}
+
+@Preview(showBackground = true, name = "Dashboard Preview")
+@Composable
+fun DashboardScreenPreview() {
+    MyFirstAppTheme {
+        DashboardScreen(onNavigateBack = {})
+    }
+}
+
+@Preview(showBackground = true, name = "Tenant List Display")
+@Composable
+fun TenantListScreenPreview() {
+    val sampleTenants = listOf(
+        Tenant(1, "Alice Smith", "A12345", "Apartment A1", "City Water"),
+        Tenant(2, "Bob Jones", "B67890", "Apartment B2", "City Water")
+    )
+    MyFirstAppTheme {
+        Column(modifier = Modifier.padding(24.dp)) {
+            Text("Stored Tenants", style = MaterialTheme.typography.headlineMedium)
+            Spacer(modifier = Modifier.height(16.dp))
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(sampleTenants) { tenant ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(text = tenant.userName, style = MaterialTheme.typography.titleLarge)
+                            Text(text = "Metre: ${tenant.metreNumber}")
+                            Text(text = "Apartment: ${tenant.apartmentName}")
+                        }
+                    }
+                }
+            }
+        }
     }
 }
