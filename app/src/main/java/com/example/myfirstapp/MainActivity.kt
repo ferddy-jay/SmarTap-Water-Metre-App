@@ -6,17 +6,30 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
+import com.example.myfirstapp.data.Tenant
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,7 +38,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
@@ -34,11 +46,16 @@ import androidx.navigation.compose.rememberNavController
 import com.example.myfirstapp.data.AppDatabase
 import com.example.myfirstapp.data.User
 import com.example.myfirstapp.ui.theme.MyFirstAppTheme
+import com.example.myfirstapp.ui.theme.components.DashboardCard
+import com.example.myfirstapp.ui.theme.login_screen.LoginScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
         enableEdgeToEdge()
         setContent {
             MyFirstAppTheme {
@@ -46,10 +63,8 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
-                    val context = LocalContext.current
-                    val database = AppDatabase.getDatabase(context)
-                    val userDao = database.userDao()
                     val coroutineScope = rememberCoroutineScope()
+                    val context = LocalContext.current
 
                     NavHost(
                         navController = navController,
@@ -64,7 +79,10 @@ class MainActivity : ComponentActivity() {
                             LoginScreen(
                                 onLoginSuccess = { email, password ->
                                     coroutineScope.launch {
-                                        val user = userDao.getUserByEmail(email)
+                                        val user = withContext(Dispatchers.IO) {
+                                            val database = AppDatabase.getDatabase(context)
+                                            database.userDao().getUserByEmail(email)
+                                        }
                                         if (user != null && user.password == password) {
                                             navController.navigate("home") {
                                                 popUpTo("login") { inclusive = true }
@@ -81,9 +99,18 @@ class MainActivity : ComponentActivity() {
                             RegisterScreen(
                                 onRegisterSuccess = { email, password ->
                                     coroutineScope.launch {
-                                        val existingUser = userDao.getUserByEmail(email)
-                                        if (existingUser == null) {
-                                            userDao.insertUser(User(email = email, password = password))
+                                        val result = withContext(Dispatchers.IO) {
+                                            val database = AppDatabase.getDatabase(context)
+                                            val userDao = database.userDao()
+                                            val existingUser = userDao.getUserByEmail(email)
+                                            if (existingUser == null) {
+                                                userDao.insertUser(User(email = email, password = password))
+                                                true
+                                            } else {
+                                                false
+                                            }
+                                        }
+                                        if (result) {
                                             Toast.makeText(context, "Registration successful", Toast.LENGTH_SHORT).show()
                                             navController.navigate("login")
                                         } else {
@@ -99,6 +126,7 @@ class MainActivity : ComponentActivity() {
                                 name = "User",
                                 onNavigateToDashboard = { navController.navigate("dashboard") },
                                 onNavigateToDetails = { navController.navigate("details") },
+                                onNavigateToTenants = { navController.navigate("tenants") },
                                 onLogout = {
                                     navController.navigate("login") {
                                         popUpTo("home") { inclusive = true }
@@ -116,6 +144,11 @@ class MainActivity : ComponentActivity() {
                                 onNavigateBack = { navController.popBackStack() }
                             )
                         }
+                        composable("tenants") {
+                            TenantListScreen(
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
                     }
                 }
             }
@@ -123,80 +156,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable
-fun LoginScreen(onLoginSuccess: (String, String) -> Unit, onNavigateToRegister: () -> Unit) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var isEmailError by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.Lock,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "Welcome Back",
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(32.dp))
-        OutlinedTextField(
-            value = email,
-            onValueChange = { 
-                email = it 
-                isEmailError = it.isNotEmpty() && !Patterns.EMAIL_ADDRESS.matcher(it).matches()
-            },
-            label = { Text("Email") },
-            leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
-            isError = isEmailError,
-            supportingText = {
-                if (isEmailError) {
-                    Text("Invalid email format", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Password") },
-            leadingIcon = { Icon(Icons.Default.Password, contentDescription = null) },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        Spacer(modifier = Modifier.height(32.dp))
-        Button(
-            onClick = { 
-                if (email.isNotEmpty() && password.isNotEmpty() && !isEmailError) {
-                    onLoginSuccess(email, password) 
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Text("Login")
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-        TextButton(onClick = onNavigateToRegister) {
-            Text("Don't have an account? Register")
-        }
-    }
-}
 
 @Composable
-fun RegisterScreen(onRegisterSuccess: (String, String) -> Unit, onNavigateToLogin: () -> Unit) {
+fun RegisterScreen(onRegisterSuccess: (String, String) -> Unit, onNavigateToLogin: () -> Unit, modifier: Modifier = Modifier) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -204,7 +166,7 @@ fun RegisterScreen(onRegisterSuccess: (String, String) -> Unit, onNavigateToLogi
     var isPasswordMismatch by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -220,7 +182,8 @@ fun RegisterScreen(onRegisterSuccess: (String, String) -> Unit, onNavigateToLogi
             value = email,
             onValueChange = { 
                 email = it 
-                isEmailError = it.isNotEmpty() && !Patterns.EMAIL_ADDRESS.matcher(it).matches()
+                // Simplified validation to match optimized LoginScreen
+                isEmailError = it.isNotEmpty() && (!it.contains("@") || !it.contains("."))
             },
             label = { Text("Email") },
             leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
@@ -285,7 +248,14 @@ fun RegisterScreen(onRegisterSuccess: (String, String) -> Unit, onNavigateToLogi
 }
 
 @Composable
-fun HomeScreen(name: String, onNavigateToDashboard: () -> Unit, onNavigateToDetails: () -> Unit, onLogout: () -> Unit, modifier: Modifier = Modifier) {
+fun HomeScreen(
+    name: String,
+    onNavigateToDashboard: () -> Unit,
+    onNavigateToDetails: () -> Unit,
+    onNavigateToTenants: () -> Unit,
+    onLogout: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var metreNumber by remember { mutableStateOf("") }
@@ -360,14 +330,30 @@ fun HomeScreen(name: String, onNavigateToDashboard: () -> Unit, onNavigateToDeta
         )
         Spacer(modifier = Modifier.height(24.dp))
 
-        // New Water Metre Section
+        // New Water Metre / Tenant Section
+        var userName by remember { mutableStateOf("") }
+        var apartmentName by remember { mutableStateOf("") }
+        var waterCompany by remember { mutableStateOf("") }
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("Water Metre", style = MaterialTheme.typography.titleLarge)
+                Text("Tenant Registration", style = MaterialTheme.typography.titleLarge)
                 Spacer(modifier = Modifier.height(8.dp))
+                
+                OutlinedTextField(
+                    value = userName,
+                    onValueChange = { userName = it },
+                    label = { Text("User Name") },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
                 OutlinedTextField(
                     value = metreNumber,
                     onValueChange = { input ->
@@ -382,32 +368,78 @@ fun HomeScreen(name: String, onNavigateToDashboard: () -> Unit, onNavigateToDeta
                             }
                         }
                     },
-                    label = { Text("Enter Metre Number") },
-                    placeholder = { Text("e.g. A12345") },
+                    label = { Text("Metre Number (e.g. A12345)") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    supportingText = {
-                        Text("Format: 1 Letter + 5 Digits (${metreNumber.length}/6)")
-                    }
+                    singleLine = true
                 )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = apartmentName,
+                    onValueChange = { apartmentName = it },
+                    label = { Text("Apartment Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = waterCompany,
+                    onValueChange = { waterCompany = it },
+                    label = { Text("Water Company") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
                 Spacer(modifier = Modifier.height(16.dp))
+                
+                val scope = rememberCoroutineScope()
                 Button(
                     onClick = {
-                        if (metreNumber.length == 6) {
-                            Toast.makeText(context, "Checking activities for metre: $metreNumber", Toast.LENGTH_LONG).show()
-                            onNavigateToDashboard()
+                        if (userName.isNotEmpty() && metreNumber.length == 6 && apartmentName.isNotEmpty()) {
+                            scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    val db = AppDatabase.getDatabase(context)
+                                    db.tenantDao().insertTenant(
+                                        Tenant(
+                                            userName = userName,
+                                            metreNumber = metreNumber,
+                                            apartmentName = apartmentName,
+                                            waterCompany = waterCompany
+                                        )
+                                    )
+                                }
+                                Toast.makeText(context, "Details for $userName saved", Toast.LENGTH_SHORT).show()
+                                userName = ""
+                                metreNumber = ""
+                                apartmentName = ""
+                                waterCompany = ""
+                            }
                         } else {
-                            Toast.makeText(context, "Please enter a valid metre number (e.g. A12345)", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Please fill in all details correctly", Toast.LENGTH_SHORT).show()
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("My metre")
+                    Text("Save Details")
                 }
             }
         }
         
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = onNavigateToTenants,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Icon(Icons.Default.Group, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("View Stored Tenants")
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
         
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -436,15 +468,17 @@ fun HomeScreen(name: String, onNavigateToDashboard: () -> Unit, onNavigateToDeta
 }
 
 @Composable
-fun DashboardScreen(onNavigateBack: () -> Unit) {
-    val items = listOf<Pair<String, ImageVector>>(
-        "Recent Activity" to Icons.Default.History,
-        "System Health" to Icons.Default.HealthAndSafety,
-        "User Analytics" to Icons.Default.Analytics,
-        "Reports" to Icons.Default.Assessment
-    )
+fun DashboardScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modifier) {
+    val items = remember {
+        listOf<Pair<String, ImageVector>>(
+            "Recent Activity" to Icons.Default.History,
+            "System Health" to Icons.Default.HealthAndSafety,
+            "User Analytics" to Icons.Default.Analytics,
+            "Reports" to Icons.Default.Assessment
+        )
+    }
 
-    Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+    Column(modifier = modifier.fillMaxSize().padding(24.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onNavigateBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -462,39 +496,51 @@ fun DashboardScreen(onNavigateBack: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun DashboardCard(title: String, icon: ImageVector) {
-    val context = LocalContext.current
-    var isExpanded by remember { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = { isExpanded = !isExpanded },
-                onLongClick = { 
-                    Toast.makeText(context, "Long pressed: $title", Toast.LENGTH_SHORT).show()
-                }
-            ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+@Composable
+fun TenantListScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val database = AppDatabase.getDatabase(context)
+    val tenants by database.tenantDao().getAllTenants().collectAsState(initial = emptyList())
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(24.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp).animateContentSize()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(title, style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onNavigateBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
-            if (isExpanded) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Detailed info for $title would be shown here. This expansion is animated using animateContentSize().",
-                    style = MaterialTheme.typography.bodySmall
-                )
+            Text("Stored Tenants", style = MaterialTheme.typography.headlineMedium)
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        if (tenants.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No tenants stored locally.", style = MaterialTheme.typography.bodyLarge)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                items(tenants) { tenant ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(text = tenant.userName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text(text = "Metre: ${tenant.metreNumber}", style = MaterialTheme.typography.bodyMedium)
+                            Text(text = "Apartment: ${tenant.apartmentName}", style = MaterialTheme.typography.bodyMedium)
+                            Text(text = "Water Co: ${tenant.waterCompany}", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
             }
         }
     }
 }
+
 
 @Composable
 fun DetailsScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modifier) {
