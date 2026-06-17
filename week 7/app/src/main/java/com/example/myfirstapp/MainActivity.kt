@@ -742,8 +742,6 @@ fun Task1StorageComparison() {
             Card(modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()) {
                 Column(modifier = Modifier.padding(8.dp)) {
                     Text(row[0], fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    Text("Adv: ${row[1]}", style = MaterialTheme.typography.bodySmall)
-                    Text("Disadv: ${row[2]}", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
