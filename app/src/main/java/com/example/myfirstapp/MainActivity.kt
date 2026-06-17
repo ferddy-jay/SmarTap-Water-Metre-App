@@ -719,15 +719,15 @@ fun ManagementTasksScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modif
         Spacer(modifier = Modifier.height(16.dp))
 
         when (selectedTab) {
-            0 -> Task1StorageComparison()
-            1 -> Task2TenantRegistration(database, scope)
-            2 -> Task3AttendanceManagement(tenants, attendanceList, database, scope)
+            0 -> StorageComparison()
+            1 -> TenantRegistration(database, scope)
+            2 -> AttendanceManagement(tenants, attendanceList, database, scope)
         }
     }
 }
 
 @Composable
-fun Task1StorageComparison() {
+fun StorageComparison() {
     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         Text("Storage Method Comparison", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(8.dp))
@@ -749,7 +749,7 @@ fun Task1StorageComparison() {
 }
 
 @Composable
-fun Task2TenantRegistration(db: AppDatabase, scope: kotlinx.coroutines.CoroutineScope) {
+fun TenantRegistration(db: AppDatabase, scope: kotlinx.coroutines.CoroutineScope) {
     var name by remember { mutableStateOf("") }
     var apartment by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
@@ -781,7 +781,7 @@ fun Task2TenantRegistration(db: AppDatabase, scope: kotlinx.coroutines.Coroutine
 }
 
 @Composable
-fun Task3AttendanceManagement(tenants: List<Tenant>, attendance: List<Attendance>, db: AppDatabase, scope: kotlinx.coroutines.CoroutineScope) {
+fun AttendanceManagement(tenants: List<Tenant>, attendance: List<Attendance>, db: AppDatabase, scope: kotlinx.coroutines.CoroutineScope) {
     val date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
     
     Column(modifier = Modifier.fillMaxSize()) {
