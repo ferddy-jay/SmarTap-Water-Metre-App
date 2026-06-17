@@ -729,7 +729,7 @@ fun ManagementTasksScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modif
 @Composable
 fun Task1StorageComparison() {
     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-        Text("Task 1: Storage Method Comparison", style = MaterialTheme.typography.titleLarge)
+        Text("Storage Method Comparison", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(8.dp))
         val methods = listOf(
             listOf("Shared Prefs", "Easy to use, Key-Value", "Small data only"),
@@ -759,7 +759,7 @@ fun Task2TenantRegistration(db: AppDatabase, scope: kotlinx.coroutines.Coroutine
     val context = LocalContext.current
 
     Column {
-        Text("Task 2: Tenant Database Design", style = MaterialTheme.typography.titleLarge)
+        Text("Tenant Database Design", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(16.dp))
         OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Tenant Name") }, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = apartment, onValueChange = { apartment = it }, label = { Text("Apartment (Course)") }, modifier = Modifier.fillMaxWidth())
@@ -787,7 +787,7 @@ fun Task3AttendanceManagement(tenants: List<Tenant>, attendance: List<Attendance
     val date = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
     
     Column(modifier = Modifier.fillMaxSize()) {
-        Text("Task 3: Attendance (Date: $date)", style = MaterialTheme.typography.titleLarge)
+        Text("Attendance (Date: $date)", style = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(8.dp))
         
         Text("Mark Attendance:", fontWeight = FontWeight.Bold)
