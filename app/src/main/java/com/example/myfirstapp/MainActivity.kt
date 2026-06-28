@@ -10,9 +10,14 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -140,6 +145,7 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToTenants = { navController.navigate("tenants") },
                                 onNavigateToNetworkData = { navController.navigate("network_data") },
                                 onNavigateToManagement = { navController.navigate("management_tasks") },
+                                onNavigateToInteractionLab = { navController.navigate("interaction_lab") },
                                 onLogout = {
                                     navController.navigate("login") {
                                         popUpTo("home") { inclusive = true }
@@ -169,6 +175,11 @@ class MainActivity : ComponentActivity() {
                         }
                         composable("management_tasks") {
                             ManagementTasksScreen(
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
+                        composable("interaction_lab") {
+                            InteractionLabScreen(
                                 onNavigateBack = { navController.popBackStack() }
                             )
                         }
@@ -295,6 +306,7 @@ fun HomeScreen(
     onNavigateToTenants: () -> Unit,
     onNavigateToNetworkData: () -> Unit,
     onNavigateToManagement: () -> Unit,
+    onNavigateToInteractionLab: () -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -536,6 +548,18 @@ fun HomeScreen(
             Icon(Icons.Default.Assignment, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
             Text("Attendance & Lab Tasks")
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onNavigateToInteractionLab,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+        ) {
+            Icon(Icons.Default.AutoAwesome, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Interaction & Gesture Lab")
         }
         
         Spacer(modifier = Modifier.height(16.dp))
@@ -817,6 +841,108 @@ fun AttendanceManagement(tenants: List<Tenant>, attendance: List<Attendance>, db
 }
 
 /**
+ * Controller class for handling user interactions.
+ * Mirroring the "class MobileApp" structure from the Practical Task.
+ */
+class InteractionController(private val onLogEvent: (String) -> Unit) {
+    fun keyboardInput(text: String) {
+        onLogEvent("Keyboard Input Received: \"$text\"")
+    }
+
+    fun tapEvent() {
+        onLogEvent("Tap Event: Button/Area Clicked")
+    }
+
+    fun swipeEvent(direction: String) {
+        onLogEvent("Swipe Event: Page Changed ($direction)")
+    }
+
+    fun longPressEvent() {
+        onLogEvent("Long Press Event: Displaying Context Menu")
+    }
+}
+
+@Composable
+fun InteractionLabScreen(onNavigateBack: () -> Unit, modifier: Modifier = Modifier) {
+    val eventLogs = remember { mutableStateListOf<String>() }
+    val controller = remember { InteractionController { eventLogs.add(0, it) } }
+    var inputText by remember { mutableStateOf("") }
+
+    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onNavigateBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text("Interaction & Gesture Lab", style = MaterialTheme.typography.headlineMedium)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Task: Keyboard Input
+        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Keyboard Input", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { 
+                        inputText = it
+                        controller.keyboardInput(it)
+                    },
+                    label = { Text("Type something here...") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
+        // Task: Detect Touch Gestures
+        Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Touch Gesture Area (Tap, Long Press, Swipe)", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.medium)
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onTap = { controller.tapEvent() },
+                                onLongPress = { controller.longPressEvent() }
+                            )
+                        }
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                if (dragAmount.x > 20) controller.swipeEvent("Right")
+                                else if (dragAmount.x < -20) controller.swipeEvent("Left")
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Interact inside this box", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Text("Interaction Logs:", fontWeight = FontWeight.Bold)
+        
+        // Task: Log events and display messages
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .background(Color.Black.copy(alpha = 0.05f), MaterialTheme.shapes.small)
+                .padding(8.dp)
+        ) {
+            items(eventLogs) { log ->
+                Text(text = ">> $log", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 2.dp))
+            }
+        }
+    }
+}
+
+/**
  * Displays a list of all tenants stored in the local Room database.
  * Includes functionality to sync data with the cloud and delete individual records.
  *
@@ -934,6 +1060,7 @@ fun HomeScreenPreview() {
             onNavigateToTenants = {},
             onNavigateToNetworkData = {},
             onNavigateToManagement = {},
+            onNavigateToInteractionLab = {},
             onLogout = {}
         )
     }
